@@ -1,5 +1,66 @@
 const router = require('express').Router()
-const { Player } = require('../models')
+const { Player, User } = require('../models')
+const bcrypt = require('bcryptjs')
+const { encode, decode } = require('../helpers/jwt')
+
+router.post('/register', async(req,res) => {
+  try {
+    const { email, password } = req.body
+    const newUser = await User.create({ email, password })
+
+    res.status(201).json({ message: `${newUser.email} register successfully` })
+  } catch (error) {
+    res.status(500).json({ message: "internal server error", error })
+  }
+})
+
+router.post('/login', async(req,res) => {
+  try {
+    const { email, password } = req.body
+    if(!email || !password) {
+      throw { name: "invalid_login" }
+    }
+
+    const user = await User.findOne({ where: { email }})
+    if(!user) {
+      throw { name: "invalid_login" }
+    }
+
+    if(!bcrypt.compareSync(password, user.password)) {
+      throw { name: "invalid_login" }
+    }
+
+    const access_token = encode({ id: user.id })
+    res.status(200).json({ access_token })
+  } catch (error) {
+    console.log(error)
+    if(error.name == 'invalid_login') {
+      res.status(401).json({ message: "invalid email/password" })
+    } else {
+      res.status(500).json({ message: "internal server error", error})
+    }
+  }
+})
+
+router.use(async (req,res,next) => {
+  try {
+    const access_token = req.headers.access_token
+    if(!access_token) throw { name: "invalid_token" }
+
+    const payload = decode(access_token)
+    const user = await User.findByPk(payload.id)
+    if(!user) throw { name: "invalid_token" }
+
+    req.currentUser = { id: user.id }
+    next()
+  } catch (error) {
+    if(error.name == 'invalid_token') {
+      res.status(401).json({ message: "invalid token unathorized", error })
+    } else {
+      res.status(500).json({ message: "internal server error", error})
+    }
+  }
+})
 
 router.get('/players', async(req,res) => {
   try {
