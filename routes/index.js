@@ -2,6 +2,7 @@ const router = require('express').Router()
 const { Player, User } = require('../models')
 const bcrypt = require('bcryptjs')
 const { encode, decode } = require('../helpers/jwt')
+const { OAuth2Client } = require("google-auth-library");
 
 router.post('/register', async (req, res) => {
   try {
@@ -10,7 +11,7 @@ router.post('/register', async (req, res) => {
 
     res.status(201).json({ message: `${newUser.email} register successfully` })
   } catch (error) {
-    res.status(500).json({ message: "internal server error", error })
+    res.status(500).json({ message: 'internal server error', error })
   }
 })
 
@@ -19,16 +20,16 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body
     console.log(email, password, '<<<<<<<<<<<<<<<')
     if (!email || !password) {
-      throw { name: "invalid_login" }
+      throw { name: 'invalid_login' }
     }
 
     const user = await User.findOne({ where: { email } })
     if (!user) {
-      throw { name: "invalid_login" }
+      throw { name: 'invalid_login' }
     }
 
     if (!bcrypt.compareSync(password, user.password)) {
-      throw { name: "invalid_login" }
+      throw { name: 'invalid_login' }
     }
 
     const access_token = encode({ id: user.id })
@@ -36,29 +37,55 @@ router.post('/login', async (req, res) => {
   } catch (error) {
     console.log(error)
     if (error.name == 'invalid_login') {
-      res.status(401).json({ message: "invalid email/password" })
+      res.status(401).json({ message: 'invalid email/password' })
     } else {
-      res.status(500).json({ message: "internal server error", error })
+      res.status(500).json({ message: 'internal server error', error })
     }
   }
+})
+
+router.post('/google-login', async (req, res, next) => {
+  const client = new OAuth2Client(process.env.GOOGLE_ID)
+  const ticket = await client.verifyIdToken({
+    idToken: req.headers.google_token,
+    audience: process.env.GOOGLE_ID
+  })
+  const googlePayload = ticket.getPayload()
+
+  const [user, created] = await User.findOrCreate({
+    where: { email: googlePayload.email },
+    defaults: {
+      email: googlePayload.email,
+      password: `loginwithgoogle`,
+    },
+    hooks: false
+  })
+
+  const payload = { id: user.id }
+  let access_token = encode(payload)
+
+  res.status(200).json({
+    access_token,
+    email: user.email
+  })
 })
 
 router.use(async (req, res, next) => {
   try {
     const access_token = req.headers.access_token
-    if (!access_token) throw { name: "invalid_token" }
+    if (!access_token) throw { name: 'invalid_token' }
 
     const payload = decode(access_token)
     const user = await User.findByPk(payload.id)
-    if (!user) throw { name: "invalid_token" }
+    if (!user) throw { name: 'invalid_token' }
 
     req.currentUser = { id: user.id }
     next()
   } catch (error) {
     if (error.name == 'invalid_token') {
-      res.status(401).json({ message: "invalid token unathorized", error })
+      res.status(401).json({ message: 'invalid token unathorized', error })
     } else {
-      res.status(500).json({ message: "internal server error", error })
+      res.status(500).json({ message: 'internal server error', error })
     }
   }
 })
@@ -69,7 +96,7 @@ router.get('/players', async (req, res) => {
 
     res.status(200).json(players)
   } catch (error) {
-    res.status(500).json({ message: "internal server error", error })
+    res.status(500).json({ message: 'internal server error', error })
   }
 })
 
@@ -81,9 +108,9 @@ router.post('/players', async (req, res) => {
     res.status(201).json({ message: 'ok', newPlayer })
   } catch (error) {
     if (error.name == 'SequelizeValidationError') {
-      res.status(400).json({ errors: error.errors.map(er => er.message) })
+      res.status(400).json({ errors: error.errors.map((er) => er.message) })
     } else {
-      res.status(500).json({ message: "internal server error", error })
+      res.status(500).json({ message: 'internal server error', error })
     }
   }
 })
@@ -100,9 +127,9 @@ router.delete('/players/:id', async (req, res) => {
     res.status(200).json({ message: `data with id ${id} successfully deleted` })
   } catch (error) {
     if (error.name == 'notFound') {
-      res.status(404).json({ message: "data not found" })
+      res.status(404).json({ message: 'data not found' })
     } else {
-      res.status(500).json({ message: "internal server error", error })
+      res.status(500).json({ message: 'internal server error', error })
     }
   }
 })
